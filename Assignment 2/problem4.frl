@@ -1,0 +1,179 @@
+((start ((on a Table)(on b a)(on c b)(clear c))))
+((goal ((on a b)(on b c)(on c Table)(clear a))))
+
+% Define required things for this problem
+
+((block X)
+    (member X (a b c)))
+
+((path S1 S2)
+    (block X)
+    (member (clear X) S1)
+    (move X Y Z S1 S2)
+)
+
+((move X Y Z S1 S2)
+    (member (clear Z) S1)
+    (negg eq Z X)
+    (block Z)
+    (block Y)
+    (member (on X Y) S1)
+    (subs (on X Y) S1 (on X Z) INT)
+    (subs (clear Z) INT (clear Y) S2))
+
+((move X Y Table S1 S2)
+    (member (on X Y) S1)
+    (block Y)
+    (append ((clear Y)) S1 INT)
+    (subs (on X Y) INT (on X Table) S2))
+
+((move X Table Z S1 S2)
+    (member (clear Z) S1)
+    (negg eq Z X)
+    (block Z)
+    (member (on X Table) S1)
+    (delete (clear Z) S1 INT)
+    (subs (on X Table) INT (on X Z) S2))
+
+% Define costs used in heuristic decision making
+
+((hcost () _ 0))
+((hcost (H | T) X N)
+    (member H X)
+    (hcost T X N))
+((hcost (H | T) X N)
+    (negg member H X)
+    (hcost T X N1)
+    (sum N1 1 N))
+
+((gcost _ _ 0))
+
+% Depth will be equivalent to g(STATE)
+((fcost STATE DEPTH COST)
+    (goal G)
+    (hcost STATE G HCOST)
+    (hcost G STATE HCOSTSYMBOLICDIFF)
+    (sum HCOST HCOSTSYMBOLICDIFF N1)
+    (sum N1 DEPTH COST))
+
+((heuristic STATE DEPTH COST)
+    (fcost STATE DEPTH COST))
+
+% Define generic list modifying predicates
+
+((member H (H|_)))
+((member X (H|T))(member X T))
+
+((reverse () ()))
+((reverse (H|T) R)(reverse T RT)(append RT (H) R))
+
+((delete _ () ()))
+((delete E OLD NEW) 
+    (append L1 (E|L2) OLD) 
+    (append L1 L2 NEW)) 
+
+((append () L L))
+((append (H|T) L2 (H|L))(append T L2 L))
+
+/* 
+(subs E1 OLD E2 NEW) holds if NEW is the list OLD in which all occurrences of E1 are substiutes by E2 
+*/ 
+
+((subs _ () _ () )) 
+/* substituting anything in the empty list results in the ampty list */
+
+/* 
+substituting the element equl to the head of the list by a new element results in a list whose head is equal to the new element
+and the tail is obtained by substituting all occurrences of elements equal to the "old head" by the new element 
+*/ 
+ ((subs H (H|T) H2 (H2 | T2)) 
+                       (subs H T H2 T2) 
+                       (!)) 
+/* otherwise */
+((subs H (H1|T1) H2 (H1|T2))
+          (subs H T1 H2 T2))  % in a list with the same head as 
+                                    % the OLD list and a "new" tail, obtained 
+                                    % by the substitution 
+
+((pretty_print () ))
+((pretty_print (H|T))(pp)(p H "->")(pretty_print T))
+
+% Define predicates specific to h_search
+
+/*
+This should define a process that operates on a few terms:
+ - Take a start state and a goal state
+ - Check if start state is goal state
+ - If not, generate all possible paths from start state with costs
+ - Select lowest cost next state and repeat process until goal state is achieved
+ - If cycle is achieved...fail and retry at next deepest path
+*/
+
+((h_search START GOAL SOLN)
+    (kill goal)
+    (addcl ((goal GOAL)) )
+    (solve ((START 0 0)) STATELIST)
+    (reverse STATELIST SOLN)
+    (pretty_print SOLN)
+    (delcl ((goal GOAL)) )
+)
+
+((goal ((on a b) (on b c) (on c Table) (clear a))))
+
+((solve ((STATE COST DEPTH) | SOLN) ((STATE COST DEPTH) | SOLN))
+    (goal STATE)
+)
+((solve (STATE | CURRENTSTATELIST) SOLN)
+    (generate_all_paths (STATE | CURRENTSTATELIST) NEXTSTATELIST)
+    (remove_duplicates (STATE | CURRENTSTATELIST) NEXTSTATELIST POTENTIALNSTATES)
+    (sort_by_cost POTENTIALNSTATES SORTEDNSTATES)
+    (solve_next SORTEDNSTATES (STATE | CURRENTSTATELIST) SOLN)
+)
+
+((solve_next (STATE | NEXTSTATES) CURRENTSTATELIST SOL)
+    (solve (STATE | CURRENTSTATELIST) SOL)
+)
+((solve_next (_ | NEXTSTATES) CURRENTSTATELIST SOL)
+    (solve_next NEXTSTATES CURRENTSTATELIST SOL)
+)
+
+((remove_duplicates BASELIST () () ))
+((remove_duplicates BASELIST ((STATE COST DEPTH) | DUPLIST) ((STATE COST DEPTH) | NONDUPLIST))
+    (negg member (STATE _ _) BASELIST)
+    (remove_duplicates BASELIST DUPLIST NONDUPLIST)
+)
+((remove_duplicates BASELIST ((STATE COST DEPTH) | DUPLIST) NONDUPLIST)
+    (member (STATE _ _) BASELIST)
+    (remove_duplicates BASELIST DUPLIST NONDUPLIST)
+)
+
+((sort_by_cost () ()))
+((sort_by_cost (H|T) SORTED)
+    (sort_by_cost T T1)
+    (insert H T1 SORTED)
+) 
+((insert X () (X)))
+((insert (S1 COST1 D1) ((S2 COST2 D2) | T) ((S1 COST1 D1) (S2 COST2 D2) | T))
+    (less COST1 COST2)(!)
+)
+((insert (S1 COST1 D1) ((S2 COST2 D2)|T) ((S2 COST2 D2)|T1))
+    (insert (S1 COST1 D1) T T1)
+)
+
+% A PATH is a connection between TWO states with the cost to goal state
+% The data structure to represent a path is a 3 element tuple
+% (CLAUSELIST_START CLAUSELIST_NEXT COST)
+% The list of states that dictate a state path to a solution will be the following
+% (LASTSTATE LASTCOST DEPTH) | PREVIOUSSTATES
+((generate_all_paths ((LASTSTATE LASTCOST DEPTH) | PREVIOUSSTATES) NEXTLIST)
+    (findall
+        (NEXTSTATE COST NEXTDEPTH)
+        (
+            (sum DEPTH 1 NEXTDEPTH)
+            (path LASTSTATE NEXTSTATE)
+            (heuristic NEXTSTATE NEXTDEPTH COST)
+        )
+        NEXTLIST
+    )
+)
+
